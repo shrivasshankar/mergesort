@@ -6,26 +6,27 @@
 using namespace std;
 
 
+
 /// basic merge with runs
-const int CHUNK_SIZE = 3;
+const int CHUNK_SIZE = 10000;
 
 int main() {
     ifstream in("input.txt");
 
-    vector<int> buffer;
-    int x;
+    vector<string> buffer;
+    string record;
     int runId = 0;
 
-    while (in >> x) {
-        buffer.push_back(x);
+    while (getline(in, record)) {
+        buffer.push_back(record);
         // buffer 
         if (buffer.size() == CHUNK_SIZE) {
             sort(buffer.begin(), buffer.end());
             ofstream out("run" + to_string(runId) + ".txt");
 
             // write buffer out 
-            for (int num : buffer) {
-                out << num << "\n";
+            for (const string& record : buffer) {
+                out << record << "\n";
             }
 
             buffer.clear();
@@ -40,8 +41,8 @@ int main() {
         sort(buffer.begin(), buffer.end());
         ofstream out("run" + to_string(runId) + ".txt");
 
-        for (int num : buffer) {
-            out << num << "\n";
+        for (const string& record : buffer) {
+            out << record << "\n";
         }
         buffer.clear();
         runId++;
