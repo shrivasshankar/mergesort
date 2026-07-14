@@ -1,0 +1,15 @@
+# compiled programs
+split_program
+merge_program
+std_sort_program
+
+# generated files
+run*.txt
+output.txt
+std_output.txt
+
+# datasets
+input.txt
+
+# mac files
+.DS_Store
