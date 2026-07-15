@@ -25,10 +25,11 @@ int main(int argc, char* argv[]) {
     }
 
     ifstream in("input.txt", ios::binary);
+    ofstream values("values.dat", ios::binary);
 
     struct Record {
         string key;
-        string data;
+        long long pointer;
     };
 
     vector<Record> buffer;  
@@ -43,13 +44,14 @@ int main(int argc, char* argv[]) {
             break;
         }
 
+        long long pointer = values.tellp(); // returns pointer position
+
+        values.write(line.data(), RECORD_SIZE); // save records in values
+
         Record record;
-        record.key = line.substr(0, 10); // gets first 10 bytes as key 
-        // Store the complete record so merging does not require
-        // random access back to the original input file. 
-        // this caused many problems when i implemented wiscsorts's pointer based merge sort
-        // which cause splitting to be quick but merging to be absurrdly long on 50gb
-        record.data = line; 
+        record.key = line.substr(0, 10);
+        record.pointer = pointer;
+
         buffer.push_back(record);
 
         // when memory is full sort the chunk and write a sorted run
@@ -62,7 +64,7 @@ int main(int argc, char* argv[]) {
 
             // write buffer out 
             for (const Record& record : buffer) {
-                out.write(record.data.data(), RECORD_SIZE);
+                out << record.key << "|" << record.pointer << "\n"; 
             }
 
             buffer.clear();
@@ -80,7 +82,7 @@ int main(int argc, char* argv[]) {
         ofstream out("run" + to_string(runId) + ".txt", ios::binary);
 
         for (const Record& record : buffer) {
-            out.write(record.data.data(), RECORD_SIZE);
+            out << record.key << "|" << record.pointer << "\n";
         }
         buffer.clear();
         runId++;
