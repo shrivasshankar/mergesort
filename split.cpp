@@ -6,8 +6,9 @@
 #include <chrono>
 using namespace std;
 
-/// max records that fit in memory at once
+// max records in memory
 int CHUNK_SIZE;
+const int RECORD_SIZE = 100;
 
 int main(int argc, char* argv[]) {
     auto start = chrono::high_resolution_clock::now(); // start timer
@@ -23,45 +24,45 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    ifstream in("input.txt");
+    ifstream in("input.txt", ios::binary);
 
     struct Record {
         string key;
-        long long offset; 
+        string data;
     };
 
-    const int RECORD_SIZE = 100;
     vector<Record> buffer;  
-    buffer.reserve(CHUNK_SIZE); // reserves before to prevent repeasted allocaiton
+    buffer.reserve(CHUNK_SIZE); // reserves before to prevent repeatd allocaiton
     int runId = 0;
 
-    // reads records until buffer is full 
+    // reads records until buffer/chunk is full 
     while (true) {
-        streampos pos = in.tellg(); // gets pos 
-
-        string line(RECORD_SIZE, '\0'); // read 100 bytes
+        string line(RECORD_SIZE, '\0');
 
         if (!in.read(&line[0], RECORD_SIZE)) {
             break;
         }
 
         Record record;
-        record.offset = pos;
-        record.key = line.substr(0, 10); // gets key 
+        record.key = line.substr(0, 10); // gets first 10 bytes as key 
+        // Store the complete record so merging does not require
+        // random access back to the original input file. 
+        // this caused many problems when i implemented wiscsorts's pointer based merge sort
+        // which cause splitting to be quick but merging to be absurrdly long on 50gb
+        record.data = line; 
         buffer.push_back(record);
 
-        // buffer 
+        // when memory is full sort the chunk and write a sorted run
         if (buffer.size() == static_cast<size_t>(CHUNK_SIZE)) {
             sort(buffer.begin(), buffer.end(), [](const Record& a, const Record& b){
                 return a.key < b.key;
             });
 
-            ofstream out("run" + to_string(runId) + ".txt");
+            ofstream out("run" + to_string(runId) + ".txt", ios::binary);
 
             // write buffer out 
             for (const Record& record : buffer) {
-                out.write(record.key.data(), 10);
-                out << record.offset << "\n";
+                out.write(record.data.data(), RECORD_SIZE);
             }
 
             buffer.clear();
@@ -71,16 +72,15 @@ int main(int argc, char* argv[]) {
 
         }
     }
-    // clear remaining buffer 
+    // write any remaining records that did not fill a complete chunk 
     if (!buffer.empty()) {
         sort(buffer.begin(), buffer.end(), [](const Record& a, const Record& b){
                 return a.key < b.key;
             });
-        ofstream out("run" + to_string(runId) + ".txt");
+        ofstream out("run" + to_string(runId) + ".txt", ios::binary);
 
         for (const Record& record : buffer) {
-            out.write(record.key.data(), 10);
-            out << record.offset << "\n";
+            out.write(record.data.data(), RECORD_SIZE);
         }
         buffer.clear();
         runId++;
