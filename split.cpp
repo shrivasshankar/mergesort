@@ -4,11 +4,17 @@
 #include <fstream>
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 using namespace std;
 
 // max records in memory
 int CHUNK_SIZE;
 const int RECORD_SIZE = 100;
+
+struct KeyPointer {
+        char key[10];
+        long long pointer;
+};
 
 int main(int argc, char* argv[]) {
     auto start = chrono::high_resolution_clock::now(); // start timer
@@ -27,12 +33,8 @@ int main(int argc, char* argv[]) {
     ifstream in("input.txt", ios::binary);
     ofstream values("values.dat", ios::binary);
 
-    struct Record {
-        string key;
-        long long pointer;
-    };
 
-    vector<Record> buffer;  
+    vector<KeyPointer> buffer;  
     buffer.reserve(CHUNK_SIZE); // reserves before to prevent repeatd allocaiton
     int runId = 0;
 
@@ -48,23 +50,28 @@ int main(int argc, char* argv[]) {
 
         values.write(line.data(), RECORD_SIZE); // save records in values
 
-        Record record;
-        record.key = line.substr(0, 10);
+        KeyPointer record;
+
+        memcpy(record.key, line.data(), 10);
         record.pointer = pointer;
 
         buffer.push_back(record);
 
         // when memory is full sort the chunk and write a sorted run
         if (buffer.size() == static_cast<size_t>(CHUNK_SIZE)) {
-            sort(buffer.begin(), buffer.end(), [](const Record& a, const Record& b){
-                return a.key < b.key;
-            });
+            sort(buffer.begin(), buffer.end(),
+            [](const KeyPointer& a, const KeyPointer& b){
+                return strncmp(a.key, b.key, 10) < 0;
+        });
 
-            ofstream out("run" + to_string(runId) + ".txt", ios::binary);
+            ofstream out("run" + to_string(runId) + ".bin", ios::binary);
 
             // write buffer out 
-            for (const Record& record : buffer) {
-                out << record.key << "|" << record.pointer << "\n"; 
+            for (KeyPointer& record : buffer) {
+                out.write(
+                    reinterpret_cast<char*>(&record),
+                    sizeof(record)
+                );
             }
 
             buffer.clear();
@@ -76,14 +83,21 @@ int main(int argc, char* argv[]) {
     }
     // write any remaining records that did not fill a complete chunk 
     if (!buffer.empty()) {
-        sort(buffer.begin(), buffer.end(), [](const Record& a, const Record& b){
-                return a.key < b.key;
-            });
-        ofstream out("run" + to_string(runId) + ".txt", ios::binary);
 
-        for (const Record& record : buffer) {
-            out << record.key << "|" << record.pointer << "\n";
-        }
+    sort(buffer.begin(), buffer.end(),
+    [](const KeyPointer& a, const KeyPointer& b){
+        return strncmp(a.key, b.key, 10) < 0;
+    });
+
+    ofstream out("run" + to_string(runId) + ".bin", ios::binary);
+
+    for (const KeyPointer& record : buffer) {
+        out.write(
+            reinterpret_cast<char*>(&record),
+            sizeof(record)
+        );
+    }
+
         buffer.clear();
         runId++;
     }
