@@ -5,15 +5,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cstdint> 
 using namespace std;
 
 // max records in memory
 int CHUNK_SIZE;
 const int RECORD_SIZE = 100;
 
-struct KeyPointer {
+struct KeyIdx {
         char key[10];
-        long long pointer;
+        uint32_t idx;   // record's slot within the chunk buffer
 };
 
 int main(int argc, char* argv[]) {
@@ -31,76 +32,44 @@ int main(int argc, char* argv[]) {
     }
 
     ifstream in("input.txt", ios::binary);
-    ofstream values("values.dat", ios::binary);
 
-
-    vector<KeyPointer> buffer;  
-    buffer.reserve(CHUNK_SIZE); // reserves before to prevent repeatd allocaiton
+    vector<char> buf(static_cast<size_t>(CHUNK_SIZE) * RECORD_SIZE); // full records
+    vector<char> out(static_cast<size_t>(CHUNK_SIZE) * RECORD_SIZE); // reordered
+    vector<KeyIdx> keys;
+    keys.reserve(CHUNK_SIZE);
     int runId = 0;
 
     // reads records until buffer/chunk is full 
     while (true) {
-        string line(RECORD_SIZE, '\0');
-
-        if (!in.read(&line[0], RECORD_SIZE)) {
-            break;
+        // fill one chunk of full records
+        size_t n = 0;
+        while (n < static_cast<size_t>(CHUNK_SIZE) &&
+               in.read(&buf[n * RECORD_SIZE], RECORD_SIZE)) {
+            n++;
         }
+        if (n == 0) break;
 
-        long long pointer = values.tellp(); // returns pointer position
-
-        values.write(line.data(), RECORD_SIZE); // save records in values
-
-        KeyPointer record;
-
-        memcpy(record.key, line.data(), 10);
-        record.pointer = pointer;
-
-        buffer.push_back(record);
-
-        // when memory is full sort the chunk and write a sorted run
-        if (buffer.size() == static_cast<size_t>(CHUNK_SIZE)) {
-            sort(buffer.begin(), buffer.end(),
-            [](const KeyPointer& a, const KeyPointer& b){
-                return strncmp(a.key, b.key, 10) < 0;
-        });
-
-            ofstream out("run" + to_string(runId) + ".bin", ios::binary);
-
-            // write buffer out 
-            for (KeyPointer& record : buffer) {
-                out.write(
-                    reinterpret_cast<char*>(&record),
-                    sizeof(record)
-                );
-            }
-
-            buffer.clear();
-            runId++;
-            
-
-
+        // build small key+index array and sort ONLY that
+        keys.resize(n);
+        for (size_t i = 0; i < n; i++) {
+            memcpy(keys[i].key, &buf[i * RECORD_SIZE], 10);
+            keys[i].idx = static_cast<uint32_t>(i);
         }
-    }
-    // write any remaining records that did not fill a complete chunk 
-    if (!buffer.empty()) {
+        sort(keys.begin(), keys.end(),
+             [](const KeyIdx& a, const KeyIdx& b){
+                 return memcmp(a.key, b.key, 10) < 0;
+             });
 
-    sort(buffer.begin(), buffer.end(),
-    [](const KeyPointer& a, const KeyPointer& b){
-        return strncmp(a.key, b.key, 10) < 0;
-    });
+        // reorder the buffer ONE time: gather full records in sorted order
+        for (size_t i = 0; i < n; i++)
+            memcpy(&out[i * RECORD_SIZE], &buf[keys[i].idx * RECORD_SIZE], RECORD_SIZE);
 
-    ofstream out("run" + to_string(runId) + ".bin", ios::binary);
-
-    for (const KeyPointer& record : buffer) {
-        out.write(
-            reinterpret_cast<char*>(&record),
-            sizeof(record)
-        );
-    }
-
-        buffer.clear();
+        // one sequential write of full, sorted records
+        ofstream run("run" + to_string(runId) + ".dat", ios::binary);
+        run.write(out.data(), static_cast<streamsize>(n) * RECORD_SIZE);
         runId++;
     }
+
     auto end = chrono::high_resolution_clock::now(); // end timer
     chrono::duration<double> elapsed = end - start;
     cout << "Split time: "

@@ -6,7 +6,7 @@
 #include <queue>
 #include <filesystem>
 #include <chrono>
-
+#include <cstring>
 namespace fs = std::filesystem;
 using namespace std;
 
@@ -15,15 +15,14 @@ const int RECORD_SIZE = 100;
 // Stores a key pointer pair being merged
 // fileindex tracks which sorted run this index came from
 struct Node {
-    string key;
-    long long pointer;
+    string record;      // full 100-byte record
     int fileIndex;
 };
 
 // compare for a min heap so smallest is at the top; 
 struct Compare{
      bool operator()(const Node& a, const Node& b) const {
-        return a.key > b.key; 
+        return memcmp(a.record.data(), b.record.data(), 10) > 0;
     }
 };
 
@@ -33,7 +32,6 @@ int main() {
     priority_queue<Node, vector<Node>, Compare> pq; 
     vector<string> runFiles;
     vector<ifstream> files;
-    ifstream values("values.dat", ios::binary);
  
 
     // find every run file generated during the split phase.
@@ -42,7 +40,8 @@ int main() {
         string filename = entry.path().filename().string();
 
         if (filename.rfind("run", 0) == 0 &&
-            filename.substr(filename.size() - 4) == ".txt") {
+            filename.size() > 4 &&
+            filename.substr(filename.size() - 4) == ".dat") {
             runFiles.push_back(filename);
         }
     }
@@ -58,15 +57,9 @@ int main() {
 
     // pushes the first value of each file into the priority queue
     for (int i = 0; i < files.size(); i++) {
-
-        string line;
-
-        if (getline(files[i], line)) {
-
-            string key = line.substr(0, 10);
-            long long pointer = stoll(line.substr(11));
-
-            pq.push({key, pointer, i});
+        string record(RECORD_SIZE, '\0');
+        if (files[i].read(&record[0], RECORD_SIZE)) {
+            pq.push({record, i});
         }
     }
     // writes out
@@ -76,25 +69,13 @@ int main() {
     while (!pq.empty()) {
         Node curr = pq.top();
         pq.pop();
-        // uses offset to find real record 
-        string record(RECORD_SIZE, '\0');
 
-        values.seekg(curr.pointer);
-        values.read(&record[0], RECORD_SIZE);
+        out.write(curr.record.data(), RECORD_SIZE);   // no seek, no values.dat
 
-        out.write(record.data(), RECORD_SIZE);
-
-        // Load the next key-pointer pair from the same run file.
-        string line;
-
-        if (getline(files[curr.fileIndex], line)) {
-
-            string nextKey = line.substr(0, 10);
-            long long nextPointer = stoll(line.substr(11));
-
-            pq.push({nextKey, nextPointer, curr.fileIndex});
+        string next(RECORD_SIZE, '\0');
+        if (files[curr.fileIndex].read(&next[0], RECORD_SIZE)) {
+            pq.push({next, curr.fileIndex});
         }
-
     }
 
     auto end = chrono::high_resolution_clock::now();
